@@ -91,8 +91,6 @@ HAL_StatusTypeDef LoRa_Begin(long frequency)
   return HAL_OK;
 }
 
-
-
 HAL_StatusTypeDef LoRa_Transmit(uint8_t * buffer, int length)
 {
   beginPacket(0);
@@ -182,6 +180,13 @@ HAL_StatusTypeDef LoRa_EnableCrc()
 HAL_StatusTypeDef LoRa_DisableCrc()
 {
   disableCrc();
+
+  return HAL_OK;
+}
+
+HAL_StatusTypeDef LoRa_OnDioRise()
+{
+  onDio0Rise();
 
   return HAL_OK;
 }
@@ -341,7 +346,7 @@ static void flush()
 
 static void onReceive(void(*callback)(int))
 {
-  _onReceive = callback;
+  lora._onReceive = callback;
 
   if (callback) {
     writeRegister(REG_DIO_MAPPING_1, 0x00);
@@ -527,8 +532,8 @@ static void handleDio0Rise()
     // set FIFO address to current RX address
     writeRegister(REG_FIFO_ADDR_PTR, readRegister(REG_FIFO_RX_CURRENT_ADDR));
 
-    if (_onReceive) {
-      _onReceive(packetLength);
+    if (lora._onReceive) {
+      lora._onReceive(packetLength);
     }
 
     // reset FIFO address

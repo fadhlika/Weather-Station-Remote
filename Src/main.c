@@ -61,22 +61,14 @@ void SystemClock_Config(void);
 
 /* USER CODE BEGIN PFP */
 /* Private function prototypes -----------------------------------------------*/
-
+void HAL_RTC_AlarmAEventCallback(RTC_HandleTypeDef *hrtc);
+void RTC_DateTimeShow(uint8_t* showtime);
+void RTC_AlarmConfig(void);
+void LoRa_Init(void);
 /* USER CODE END PFP */
 
 /* USER CODE BEGIN 0 */
-static void RTC_TimeShow(uint8_t* showtime)
-{
-  RTC_DateTypeDef sdatestructureget;
-  RTC_TimeTypeDef stimestructureget;
-  
-  /* Get the RTC current Time */
-  HAL_RTC_GetTime(&hrtc, &stimestructureget, RTC_FORMAT_BIN);
-  /* Get the RTC current Date */
-  HAL_RTC_GetDate(&hrtc, &sdatestructureget, RTC_FORMAT_BIN);
-  /* Display time Format : hh:mm:ss */
-  sprintf((char*)showtime,"%02d:%02d:%02d",stimestructureget.Hours, stimestructureget.Minutes, stimestructureget.Seconds);
-} 
+
 /* USER CODE END 0 */
 
 /**
@@ -115,22 +107,26 @@ int main(void)
   MX_TIM3_Init();
   MX_ADC_Init();
   /* USER CODE BEGIN 2 */
-  lora.dio0.Port = GPIOA;
-  lora.dio0.Pin = GPIO_PIN_3;
-  lora.reset.Port = GPIOA;
-  lora.reset.Pin = GPIO_PIN_2;
-  lora.ss.Port = GPIOA;
-  lora.ss.Pin = GPIO_PIN_4;
-  lora.hspi = &hspi1;
+  
+  __HAL_RCC_PWR_CLK_ENABLE();
 
-  if(LoRa_Begin(433E6) != HAL_OK) {
-    HAL_UART_Transmit(&huart1, (uint8_t*) "LoRa failed\r\n", 13, 1000);
-    while(1);
-  } else {
-    HAL_UART_Transmit(&huart1, (uint8_t*) "LoRa success\r\n", 14, 1000);
+  if(__HAL_PWR_GET_FLAG(PWR_FLAG_SB) != RESET) {
+    __HAL_PWR_CLEAR_FLAG(PWR_FLAG_SB);
   }
 
-  int counter = 0;
+  __HAL_PWR_CLEAR_FLAG(PWR_FLAG_WU);
+
+  LoRa_Init();
+
+  char buffer[32];
+  RTC_DateTimeShow(&buffer);
+  LoRa_Transmit((uint8_t*) buffer, strlen(buffer));
+  HAL_UART_Transmit(&huart1, (uint8_t*) buffer, strlen(buffer), 1000);
+  HAL_UART_Transmit(&huart1, (uint8_t*) "\r\n", 2, 1000);
+  
+  RTC_AlarmConfig();
+  LoRa_Sleep();
+  HAL_PWR_EnterSTANDBYMode();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -141,14 +137,7 @@ int main(void)
   /* USER CODE END WHILE */
 
   /* USER CODE BEGIN 3 */
-    char buffer[32];
-    RTC_TimeShow(&buffer);
-    LoRa_Transmit((uint8_t*) buffer, strlen(buffer));
-    HAL_UART_Transmit(&huart1, (uint8_t*) buffer, strlen(buffer), 1000);
-    HAL_UART_Transmit(&huart1, (uint8_t*) "\r\n", 2, 1000);
-    counter++;
-
-    HAL_Delay(15000);
+    
   }
   /* USER CODE END 3 */
 
@@ -217,7 +206,72 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
+void RTC_DateTimeShow(uint8_t* showtime)
+{
+  RTC_DateTypeDef sdatestructureget;
+  RTC_TimeTypeDef stimestructureget;
+  RTC_AlarmTypeDef salarmset;
+  
+  /* Get the RTC current Time */
+  HAL_RTC_GetTime(&hrtc, &stimestructureget, RTC_FORMAT_BIN);
+  /* Get the RTC current Date */
+  HAL_RTC_GetDate(&hrtc, &sdatestructureget, RTC_FORMAT_BIN);
+  /* Display time Format : hh:mm:ss */
+  sprintf((char*)showtime,"20%02d-%02d-%02dT%02d:%02d:%02d",
+  sdatestructureget.Year, sdatestructureget.Month, sdatestructureget.Date,
+  stimestructureget.Hours, stimestructureget.Minutes, stimestructureget.Seconds);
+} 
 
+void RTC_AlarmConfig(void) {
+  RTC_TimeTypeDef sTime;
+  RTC_DateTypeDef sDate;
+  RTC_AlarmTypeDef sAlarm;
+
+  /* Get the RTC current Time */
+  HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
+  /* Get the RTC current Date */
+  HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
+
+    /**Enable the Alarm A 
+    */
+  sAlarm.AlarmTime.Hours = sTime.Hours;
+  sAlarm.AlarmTime.Minutes = sTime.Minutes;
+  sAlarm.AlarmTime.Seconds = (sTime.Seconds + 30) % 60;
+  sAlarm.AlarmTime.SubSeconds = sTime.SubSeconds;
+  sAlarm.AlarmTime.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
+  sAlarm.AlarmTime.StoreOperation = RTC_STOREOPERATION_RESET;
+  sAlarm.AlarmMask = RTC_ALARMMASK_DATEWEEKDAY|RTC_ALARMMASK_HOURS|RTC_ALARMMASK_MINUTES;
+  sAlarm.AlarmSubSecondMask = RTC_ALARMSUBSECONDMASK_ALL;
+  sAlarm.AlarmDateWeekDaySel = RTC_ALARMDATEWEEKDAYSEL_DATE;
+  sAlarm.AlarmDateWeekDay = sDate.Date;
+  sAlarm.Alarm = RTC_ALARM_A;
+  if (HAL_RTC_SetAlarm_IT(&hrtc, &sAlarm, RTC_FORMAT_BIN) != HAL_OK)
+  {
+    _Error_Handler(__FILE__, __LINE__);
+  }
+}
+
+void HAL_RTC_AlarmAEventCallback(RTC_HandleTypeDef *hrtc)
+{
+  //HAL_UART_Transmit(&huart1, (uint8_t*) "Wake up\r\n", 10, 1000);
+}
+
+void LoRa_Init(void) {
+  lora.dio0.Port = GPIOA;
+  lora.dio0.Pin = GPIO_PIN_3;
+  lora.reset.Port = GPIOA;
+  lora.reset.Pin = GPIO_PIN_2;
+  lora.ss.Port = GPIOA;
+  lora.ss.Pin = GPIO_PIN_4;
+  lora.hspi = &hspi1;
+
+  if(LoRa_Begin(433E6) != HAL_OK) {
+    HAL_UART_Transmit(&huart1, (uint8_t*) "LoRa failed\r\n", 13, 1000);
+    while(1);
+  } else {
+    HAL_UART_Transmit(&huart1, (uint8_t*) "LoRa success\r\n", 14, 1000);
+  }
+}
 /* USER CODE END 4 */
 
 /**
@@ -232,6 +286,7 @@ void _Error_Handler(char *file, int line)
   /* User can add his own implementation to report the HAL error return state */
   while(1)
   {
+    HAL_UART_Transmit(&huart1, (uint8_t*) "Error\r\n", 8, 1000);
   }
   /* USER CODE END Error_Handler_Debug */
 }

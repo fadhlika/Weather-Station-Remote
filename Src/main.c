@@ -79,7 +79,7 @@ void LoRa_Init(void);
 int main(void)
 {
   /* USER CODE BEGIN 1 */
-
+  
   /* USER CODE END 1 */
 
   /* MCU Configuration----------------------------------------------------------*/
@@ -117,9 +117,22 @@ int main(void)
   __HAL_PWR_CLEAR_FLAG(PWR_FLAG_WU);
 
   LoRa_Init();
+  
+  char timebuffer[32];
+  RTC_DateTimeShow(&timebuffer);
+  
+  HAL_ADCEx_Calibration_Start(&hadc);
+  HAL_ADC_Start(&hadc);  
+  uint16_t adc_raw = 0;
+  if(HAL_ADC_PollForConversion(&hadc, 1000) == HAL_OK) {
+    adc_raw = HAL_ADC_GetValue(&hadc);
+  }   
 
-  char buffer[32];
-  RTC_DateTimeShow(&buffer);
+  float vdd = 3.3 * (float)(*((uint16_t*) ((uint32_t) 0x1FFFF7BA)))/adc_raw;
+
+  char buffer[64];
+  sprintf(buffer, "%s;%f", timebuffer, vdd);
+
   LoRa_Transmit((uint8_t*) buffer, strlen(buffer));
   HAL_UART_Transmit(&huart1, (uint8_t*) buffer, strlen(buffer), 1000);
   HAL_UART_Transmit(&huart1, (uint8_t*) "\r\n", 2, 1000);
@@ -127,6 +140,7 @@ int main(void)
   RTC_AlarmConfig();
   LoRa_Sleep();
   HAL_PWR_EnterSTANDBYMode();
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -137,7 +151,7 @@ int main(void)
   /* USER CODE END WHILE */
 
   /* USER CODE BEGIN 3 */
-    
+
   }
   /* USER CODE END 3 */
 
@@ -156,12 +170,9 @@ void SystemClock_Config(void)
 
     /**Initializes the CPU, AHB and APB busses clocks 
     */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI|RCC_OSCILLATORTYPE_HSI14
-                              |RCC_OSCILLATORTYPE_LSI;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI|RCC_OSCILLATORTYPE_LSI;
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
-  RCC_OscInitStruct.HSI14State = RCC_HSI14_ON;
   RCC_OscInitStruct.HSICalibrationValue = 16;
-  RCC_OscInitStruct.HSI14CalibrationValue = 16;
   RCC_OscInitStruct.LSIState = RCC_LSI_ON;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;

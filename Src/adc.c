@@ -54,7 +54,7 @@ void MX_ADC_Init(void)
     /**Configure the global features of the ADC (Clock, Resolution, Data Alignment and number of conversion) 
     */
   hadc.Instance = ADC1;
-  hadc.Init.ClockPrescaler = ADC_CLOCK_ASYNC_DIV1;
+  hadc.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
   hadc.Init.Resolution = ADC_RESOLUTION_12B;
   hadc.Init.DataAlign = ADC_DATAALIGN_RIGHT;
   hadc.Init.ScanConvMode = ADC_SCAN_DIRECTION_FORWARD;
@@ -74,9 +74,9 @@ void MX_ADC_Init(void)
 
     /**Configure for the selected ADC regular channel to be converted. 
     */
-  sConfig.Channel = ADC_CHANNEL_VBAT;
+  sConfig.Channel = ADC_CHANNEL_VREFINT;
   sConfig.Rank = ADC_RANK_CHANNEL_NUMBER;
-  sConfig.SamplingTime = ADC_SAMPLETIME_1CYCLE_5;
+  sConfig.SamplingTime = ADC_SAMPLETIME_239CYCLES_5;
   if (HAL_ADC_ConfigChannel(&hadc, &sConfig) != HAL_OK)
   {
     _Error_Handler(__FILE__, __LINE__);

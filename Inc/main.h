@@ -49,6 +49,25 @@
 
 /* Private define ------------------------------------------------------------*/
 
+#define DIO0_Pin GPIO_PIN_0
+#define DIO0_GPIO_Port GPIOA
+#define VANE_1_Pin GPIO_PIN_1
+#define VANE_1_GPIO_Port GPIOA
+#define VANE_EN_Pin GPIO_PIN_2
+#define VANE_EN_GPIO_Port GPIOA
+#define VANE_2_Pin GPIO_PIN_3
+#define VANE_2_GPIO_Port GPIOA
+#define NSS_Pin GPIO_PIN_4
+#define NSS_GPIO_Port GPIOA
+#define LORA_RST_Pin GPIO_PIN_8
+#define LORA_RST_GPIO_Port GPIOA
+#define DHT_Pin GPIO_PIN_15
+#define DHT_GPIO_Port GPIOA
+#define ANEMOMETER_Pin GPIO_PIN_3
+#define ANEMOMETER_GPIO_Port GPIOB
+#define RAINGAUGE_Pin GPIO_PIN_5
+#define RAINGAUGE_GPIO_Port GPIOB
+
 /* ########################## Assert Selection ############################## */
 /**
   * @brief Uncomment the line below to expanse the "assert_param" macro in the 

@@ -47,13 +47,19 @@
 
 /* USER CODE BEGIN Includes */
 #include "LoRa.h"
+#include <string.h>
 /* USER CODE END Includes */
 
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
 /* Private variables ---------------------------------------------------------*/
-
+uint32_t captureIndex = 0, 
+captureValue1, 
+captureValue2, 
+period;
+uint8_t anemometer_done = 0,
+anemometer_timeout = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -65,10 +71,44 @@ void HAL_RTC_AlarmAEventCallback(RTC_HandleTypeDef *hrtc);
 void RTC_DateTimeShow(uint8_t* showtime);
 void RTC_AlarmConfig(void);
 void LoRa_Init(void);
+static void SYSCLKConfig_STOP(void);
 /* USER CODE END PFP */
 
 /* USER CODE BEGIN 0 */
+void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
+{
+  if(htim->Instance == TIM2)
+  {
+    if(captureIndex == 0)
+    {
+      captureValue1 = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_2);
+      captureIndex = 1;
+      //HAL_UART_Transmit(&huart1, (uint8_t*) "Callback1\r\n", 11, 1000);
+    } 
+    else if(captureIndex == 1)
+    {
+      captureValue2 = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_2);
 
+      if(captureValue2 > captureValue1) {
+        period = captureValue2 - captureValue1;
+      } else if (captureValue2 < captureValue1) 
+      {
+        period = ((4999 - captureValue1) + captureValue2) + 1;
+      }
+      //HAL_UART_Transmit(&huart1, (uint8_t*) "Callback2\r\n", 11, 1000);
+      HAL_TIM_IC_Stop_IT(htim, TIM_CHANNEL_2);
+      anemometer_done = 1;
+    }
+  }
+}
+
+void HAL_TIM_PeriodElapsedCallback (TIM_HandleTypeDef * htim)
+{
+  if(htim->Instance == TIM14)
+  {
+    anemometer_timeout = 1;
+  }
+}
 /* USER CODE END 0 */
 
 /**
@@ -103,44 +143,13 @@ int main(void)
   MX_SPI1_Init();
   MX_USART1_UART_Init();
   MX_RTC_Init();
-  MX_TIM1_Init();
   MX_TIM3_Init();
   MX_ADC_Init();
+  MX_TIM2_Init();
+  MX_TIM14_Init();
   /* USER CODE BEGIN 2 */
-  
-  __HAL_RCC_PWR_CLK_ENABLE();
-
-  if(__HAL_PWR_GET_FLAG(PWR_FLAG_SB) != RESET) {
-    __HAL_PWR_CLEAR_FLAG(PWR_FLAG_SB);
-  }
-
-  __HAL_PWR_CLEAR_FLAG(PWR_FLAG_WU);
-
-  LoRa_Init();
-  
-  char timebuffer[32];
-  RTC_DateTimeShow(&timebuffer);
-  
-  HAL_ADCEx_Calibration_Start(&hadc);
-  HAL_ADC_Start(&hadc);  
-  uint16_t adc_raw = 0;
-  if(HAL_ADC_PollForConversion(&hadc, 1000) == HAL_OK) {
-    adc_raw = HAL_ADC_GetValue(&hadc);
-  }   
-
-  float vdd = 3.3 * (float)(*((uint16_t*) ((uint32_t) 0x1FFFF7BA)))/adc_raw;
-
-  char buffer[64];
-  sprintf(buffer, "%s;%f", timebuffer, vdd);
-
-  LoRa_Transmit((uint8_t*) buffer, strlen(buffer));
-  HAL_UART_Transmit(&huart1, (uint8_t*) buffer, strlen(buffer), 1000);
-  HAL_UART_Transmit(&huart1, (uint8_t*) "\r\n", 2, 1000);
-  
-  RTC_AlarmConfig();
-  LoRa_Sleep();
-  HAL_PWR_EnterSTANDBYMode();
-
+  HAL_RTC_MspInit(&hrtc);
+  HAL_TIM_Base_Start(&htim3);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -151,7 +160,61 @@ int main(void)
   /* USER CODE END WHILE */
 
   /* USER CODE BEGIN 3 */
+    RTC_AlarmConfig();
+    uint8_t timebuffer[16], buffer[32];
 
+    anemometer_done = 0;
+    anemometer_timeout = 0;
+    captureIndex = 0;
+    period = 0;
+    HAL_TIM_Base_Start_IT(&htim14);
+    HAL_TIM_IC_Start_IT(&htim2, TIM_CHANNEL_2);
+  
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_2, GPIO_PIN_RESET);
+
+    uint16_t adc_raw[3];
+    HAL_ADCEx_Calibration_Start(&hadc);
+    HAL_ADC_Start(&hadc);
+    int i;
+    for(i=0; i<3; i++) {
+      if(HAL_ADC_PollForConversion(&hadc, 500) == HAL_OK) {
+        adc_raw[i] = HAL_ADC_GetValue(&hadc);
+      }
+    }
+    HAL_ADC_Stop(&hadc);
+
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_2, GPIO_PIN_SET);
+
+    float vdd = 3.300 * (float)(*((uint16_t*) ((uint32_t) 0x1FFFF7BA)))/adc_raw[2];
+
+    while((anemometer_done != 1) && (anemometer_timeout != 1)) {
+      HAL_SuspendTick();
+      HAL_PWR_EnterSLEEPMode(PWR_MAINREGULATOR_ON, PWR_SLEEPENTRY_WFI);
+      HAL_ResumeTick();
+    }
+    
+    HAL_TIM_Base_Stop_IT(&htim14);
+    if(anemometer_timeout == 1) {
+      HAL_TIM_IC_Stop_IT(&htim2, TIM_CHANNEL_2);
+    }
+    
+    RTC_DateTimeShow(&timebuffer);
+
+    uint32_t tip = __HAL_TIM_GET_COUNTER(&htim3);
+    sprintf(buffer, "%s;%.03f;%u;%u;%u;%u", timebuffer, vdd, tip, adc_raw[0], adc_raw[1], period);
+    HAL_UART_Transmit(&huart1, &buffer, strlen(buffer), 1000);
+    HAL_UART_Transmit(&huart1, (uint8_t*) "\r\n", 2, 1000);
+    
+    LoRa_Init();
+    LoRa_Transmit(buffer, strlen(buffer));
+    LoRa_Sleep();
+
+    //HAL_PWR_EnterSTOPMode(PWR_LOWPOWERREGULATOR_ON, PWR_SLEEPENTRY_WFE);
+    //SYSCLKConfig_STOP();
+  
+    HAL_SuspendTick();
+    HAL_PWR_EnterSLEEPMode(PWR_MAINREGULATOR_ON, PWR_SLEEPENTRY_WFE);
+    HAL_ResumeTick();
   }
   /* USER CODE END 3 */
 
@@ -170,12 +233,11 @@ void SystemClock_Config(void)
 
     /**Initializes the CPU, AHB and APB busses clocks 
     */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI|RCC_OSCILLATORTYPE_LSI;
-  RCC_OscInitStruct.HSIState = RCC_HSI_ON;
-  RCC_OscInitStruct.HSICalibrationValue = 16;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_LSI|RCC_OSCILLATORTYPE_HSE;
+  RCC_OscInitStruct.HSEState = RCC_HSE_ON;
   RCC_OscInitStruct.LSIState = RCC_LSI_ON;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
-  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
   RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL6;
   RCC_OscInitStruct.PLL.PREDIV = RCC_PREDIV_DIV1;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
@@ -204,6 +266,10 @@ void SystemClock_Config(void)
     _Error_Handler(__FILE__, __LINE__);
   }
 
+    /**Enables the Clock Security System 
+    */
+  HAL_RCC_EnableCSS();
+
     /**Configure the Systick interrupt time 
     */
   HAL_SYSTICK_Config(HAL_RCC_GetHCLKFreq()/1000);
@@ -221,7 +287,6 @@ void RTC_DateTimeShow(uint8_t* showtime)
 {
   RTC_DateTypeDef sdatestructureget;
   RTC_TimeTypeDef stimestructureget;
-  RTC_AlarmTypeDef salarmset;
   
   /* Get the RTC current Time */
   HAL_RTC_GetTime(&hrtc, &stimestructureget, RTC_FORMAT_BIN);
@@ -234,53 +299,74 @@ void RTC_DateTimeShow(uint8_t* showtime)
 } 
 
 void RTC_AlarmConfig(void) {
-  RTC_TimeTypeDef sTime;
-  RTC_DateTypeDef sDate;
-  RTC_AlarmTypeDef sAlarm;
+  RTC_TimeTypeDef stimestructureget;
+  RTC_AlarmTypeDef salarmstructureget;
 
   /* Get the RTC current Time */
-  HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
-  /* Get the RTC current Date */
-  HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
+  HAL_RTC_GetTime(&hrtc, &stimestructureget, RTC_FORMAT_BIN);
 
+  HAL_RTC_GetAlarm(&hrtc, &salarmstructureget, RTC_ALARM_A, RTC_FORMAT_BIN);
     /**Enable the Alarm A 
     */
-  sAlarm.AlarmTime.Hours = sTime.Hours;
-  sAlarm.AlarmTime.Minutes = sTime.Minutes;
-  sAlarm.AlarmTime.Seconds = (sTime.Seconds + 30) % 60;
-  sAlarm.AlarmTime.SubSeconds = sTime.SubSeconds;
-  sAlarm.AlarmTime.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
-  sAlarm.AlarmTime.StoreOperation = RTC_STOREOPERATION_RESET;
-  sAlarm.AlarmMask = RTC_ALARMMASK_DATEWEEKDAY|RTC_ALARMMASK_HOURS|RTC_ALARMMASK_MINUTES;
-  sAlarm.AlarmSubSecondMask = RTC_ALARMSUBSECONDMASK_ALL;
-  sAlarm.AlarmDateWeekDaySel = RTC_ALARMDATEWEEKDAYSEL_DATE;
-  sAlarm.AlarmDateWeekDay = sDate.Date;
-  sAlarm.Alarm = RTC_ALARM_A;
-  if (HAL_RTC_SetAlarm_IT(&hrtc, &sAlarm, RTC_FORMAT_BIN) != HAL_OK)
+  salarmstructureget.AlarmTime.Seconds = (stimestructureget.Seconds + 30) % 60;
+  if (HAL_RTC_SetAlarm_IT(&hrtc, &salarmstructureget, RTC_FORMAT_BIN) != HAL_OK)
   {
     _Error_Handler(__FILE__, __LINE__);
   }
 }
 
+static void SYSCLKConfig_STOP(void)
+{
+  RCC_ClkInitTypeDef RCC_ClkInitStruct;
+  RCC_OscInitTypeDef RCC_OscInitStruct;
+
+  /* Enable Power Control clock */
+  __HAL_RCC_PWR_CLK_ENABLE();
+
+  uint32_t pFLatency = 0;
+
+  /* Get the Oscillators configuration according to the internal RCC registers */
+  HAL_RCC_GetOscConfig(&RCC_OscInitStruct);
+
+  /* After wake-up from STOP reconfigure the system clock: Enable HSE and PLL */
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
+  RCC_OscInitStruct.HSEState = RCC_HSE_ON;
+  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /* Get the Clocks configuration according to the internal RCC registers */
+  HAL_RCC_GetClockConfig(&RCC_ClkInitStruct, &pFLatency);
+
+  /* Select PLL as system clock source and configure the HCLK, PCLK1 and PCLK2
+     clocks dividers */
+  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_SYSCLK;
+  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, pFLatency) != HAL_OK)
+  {
+    Error_Handler();
+  }
+}
+
 void HAL_RTC_AlarmAEventCallback(RTC_HandleTypeDef *hrtc)
 {
-  //HAL_UART_Transmit(&huart1, (uint8_t*) "Wake up\r\n", 10, 1000);
+  
 }
 
 void LoRa_Init(void) {
   lora.dio0.Port = GPIOA;
-  lora.dio0.Pin = GPIO_PIN_3;
+  lora.dio0.Pin = GPIO_PIN_0;
   lora.reset.Port = GPIOA;
-  lora.reset.Pin = GPIO_PIN_2;
+  lora.reset.Pin = GPIO_PIN_8;
   lora.ss.Port = GPIOA;
   lora.ss.Pin = GPIO_PIN_4;
   lora.hspi = &hspi1;
 
   if(LoRa_Begin(433E6) != HAL_OK) {
     HAL_UART_Transmit(&huart1, (uint8_t*) "LoRa failed\r\n", 13, 1000);
-    while(1);
-  } else {
-    HAL_UART_Transmit(&huart1, (uint8_t*) "LoRa success\r\n", 14, 1000);
+    Error_Handler();
   }
 }
 /* USER CODE END 4 */

@@ -60,6 +60,7 @@ captureValue2,
 period;
 uint8_t anemometer_done = 0,
 anemometer_timeout = 0;
+uint8_t timebuffer[32], buffer[64];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -72,6 +73,7 @@ void RTC_DateTimeShow(uint8_t* showtime);
 void RTC_AlarmConfig(void);
 void LoRa_Init(void);
 static void SYSCLKConfig_STOP(void);
+void RTC_Init(void);
 /* USER CODE END PFP */
 
 /* USER CODE BEGIN 0 */
@@ -141,14 +143,14 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_SPI1_Init();
-  MX_USART1_UART_Init();
   MX_RTC_Init();
   MX_TIM3_Init();
   MX_ADC_Init();
   MX_TIM2_Init();
   MX_TIM14_Init();
+  MX_TIM16_Init();
+  MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
-  HAL_RTC_MspInit(&hrtc);
   HAL_TIM_Base_Start(&htim3);
   /* USER CODE END 2 */
 
@@ -160,13 +162,14 @@ int main(void)
   /* USER CODE END WHILE */
 
   /* USER CODE BEGIN 3 */
+    RTC_DateTimeShow(&timebuffer);
     RTC_AlarmConfig();
-    uint8_t timebuffer[16], buffer[32];
-
+    
     anemometer_done = 0;
     anemometer_timeout = 0;
     captureIndex = 0;
     period = 0;
+    
     HAL_TIM_Base_Start_IT(&htim14);
     HAL_TIM_IC_Start_IT(&htim2, TIM_CHANNEL_2);
   
@@ -185,7 +188,7 @@ int main(void)
 
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_2, GPIO_PIN_SET);
 
-    float vdd = 3.300 * (float)(*((uint16_t*) ((uint32_t) 0x1FFFF7BA)))/adc_raw[2];
+    uint16_t vdd = 3300 * (float)(*((uint16_t*) ((uint32_t) 0x1FFFF7BA)))/adc_raw[2];
 
     while((anemometer_done != 1) && (anemometer_timeout != 1)) {
       HAL_SuspendTick();
@@ -197,24 +200,23 @@ int main(void)
     if(anemometer_timeout == 1) {
       HAL_TIM_IC_Stop_IT(&htim2, TIM_CHANNEL_2);
     }
-    
-    RTC_DateTimeShow(&timebuffer);
-
+  
     uint32_t tip = __HAL_TIM_GET_COUNTER(&htim3);
-    sprintf(buffer, "%s;%.03f;%u;%u;%u;%u", timebuffer, vdd, tip, adc_raw[0], adc_raw[1], period);
-    HAL_UART_Transmit(&huart1, &buffer, strlen(buffer), 1000);
+    int len = sprintf(buffer, "%s;%u;%u;%u;%u;%u", timebuffer, vdd, tip, adc_raw[0], adc_raw[1], period);
+    
+    HAL_UART_Transmit(&huart1, &buffer, len, 1000);
     HAL_UART_Transmit(&huart1, (uint8_t*) "\r\n", 2, 1000);
     
     LoRa_Init();
-    LoRa_Transmit(buffer, strlen(buffer));
+    LoRa_Transmit(buffer, len);
     LoRa_Sleep();
-
-    //HAL_PWR_EnterSTOPMode(PWR_LOWPOWERREGULATOR_ON, PWR_SLEEPENTRY_WFE);
-    //SYSCLKConfig_STOP();
-  
-    HAL_SuspendTick();
-    HAL_PWR_EnterSLEEPMode(PWR_MAINREGULATOR_ON, PWR_SLEEPENTRY_WFE);
-    HAL_ResumeTick();
+    
+    
+    __HAL_RTC_ALARM_CLEAR_FLAG(&hrtc, RTC_FLAG_ALRAF);
+    __HAL_RTC_ALARM_EXTI_CLEAR_FLAG();
+    __HAL_PWR_CLEAR_FLAG(PWR_FLAG_WU);
+    HAL_PWR_EnterSTOPMode(PWR_LOWPOWERREGULATOR_ON, PWR_STOPENTRY_WFE);
+    SystemClock_Config();
   }
   /* USER CODE END 3 */
 
@@ -236,7 +238,10 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_LSI|RCC_OSCILLATORTYPE_HSE;
   RCC_OscInitStruct.HSEState = RCC_HSE_ON;
   RCC_OscInitStruct.LSIState = RCC_LSI_ON;
-  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_NONE;
+  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
+  RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL3;
+  RCC_OscInitStruct.PLL.PREDIV = RCC_PREDIV_DIV1;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
     _Error_Handler(__FILE__, __LINE__);
@@ -246,7 +251,7 @@ void SystemClock_Config(void)
     */
   RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
                               |RCC_CLOCKTYPE_PCLK1;
-  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_HSE;
+  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
   RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
 
@@ -296,21 +301,36 @@ void RTC_DateTimeShow(uint8_t* showtime)
 } 
 
 void RTC_AlarmConfig(void) {
-  RTC_TimeTypeDef stimestructureget;
-  RTC_AlarmTypeDef salarmstructureget;
+   RTC_TimeTypeDef stimestructureget;
+   RTC_DateTypeDef sdatestructureget;
+   RTC_AlarmTypeDef salarmstructureget;
+ 
+   /* Get the RTC current Time */
 
-  /* Get the RTC current Time */
-  HAL_RTC_GetTime(&hrtc, &stimestructureget, RTC_FORMAT_BIN);
+   HAL_RTC_GetTime(&hrtc, &stimestructureget, RTC_FORMAT_BIN);
 
-  HAL_RTC_GetAlarm(&hrtc, &salarmstructureget, RTC_ALARM_A, RTC_FORMAT_BIN);
-    /**Enable the Alarm A 
-    */
-  salarmstructureget.AlarmTime.Seconds = (stimestructureget.Seconds + 30) % 60;
-  if (HAL_RTC_SetAlarm_IT(&hrtc, &salarmstructureget, RTC_FORMAT_BIN) != HAL_OK)
-  {
-    _Error_Handler(__FILE__, __LINE__);
-  }
-}
+   HAL_RTC_GetDate(&hrtc, &sdatestructureget, RTC_FORMAT_BIN);
+   /* Get the RTC current Date */
+
+   HAL_RTC_GetDate(&hrtc, &sdatestructureget, RTC_FORMAT_BIN);
+
+   salarmstructureget.AlarmTime.Hours = stimestructureget.Hours;
+   salarmstructureget.AlarmTime.Minutes = stimestructureget.Minutes;
+   salarmstructureget.AlarmTime.Seconds = (stimestructureget.Seconds + 15) % 60;
+   salarmstructureget.AlarmTime.SubSeconds = stimestructureget.SubSeconds;
+   salarmstructureget.AlarmTime.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
+   salarmstructureget.AlarmTime.StoreOperation = RTC_STOREOPERATION_RESET;
+   salarmstructureget.AlarmMask = RTC_ALARMMASK_DATEWEEKDAY | RTC_ALARMMASK_HOURS | RTC_ALARMMASK_MINUTES;
+   salarmstructureget.AlarmSubSecondMask = RTC_ALARMSUBSECONDMASK_ALL;
+   salarmstructureget.AlarmDateWeekDaySel = RTC_ALARMDATEWEEKDAYSEL_DATE;
+   salarmstructureget.AlarmDateWeekDay = sdatestructureget.Date;
+   salarmstructureget.Alarm = RTC_ALARM_A;
+   if (HAL_RTC_SetAlarm_IT(&hrtc, &salarmstructureget, RTC_FORMAT_BIN) != HAL_OK)
+   {
+     _Error_Handler(__FILE__, __LINE__);
+   }
+ }
+ 
 
 static void SYSCLKConfig_STOP(void)
 {
@@ -318,7 +338,6 @@ static void SYSCLKConfig_STOP(void)
   RCC_OscInitTypeDef RCC_OscInitStruct;
 
   /* Enable Power Control clock */
-  __HAL_RCC_PWR_CLK_ENABLE();
 
   uint32_t pFLatency = 0;
 
@@ -349,6 +368,12 @@ static void SYSCLKConfig_STOP(void)
 
 void HAL_RTC_AlarmAEventCallback(RTC_HandleTypeDef *hrtc)
 {
+  /*
+  uint32_t timer = __HAL_TIM_GET_COUNTER(&htim16);
+  __HAL_TIM_SET_COUNTER(&htim16, 0);
+  char buffer[16];
+  sprintf(buffer, "%u\r\n", timer);*/
+  //HAL_UART_Transmit(&huart1, (uint8_t*) "Alarm\r\n", 7, 1000);
   
 }
 
@@ -362,10 +387,10 @@ void LoRa_Init(void) {
   lora.hspi = &hspi1;
 
   if(LoRa_Begin(433E6) != HAL_OK) {
-    HAL_UART_Transmit(&huart1, (uint8_t*) "LoRa failed\r\n", 13, 1000);
     Error_Handler();
   }
 }
+
 /* USER CODE END 4 */
 
 /**
@@ -380,7 +405,7 @@ void _Error_Handler(char *file, int line)
   /* User can add his own implementation to report the HAL error return state */
   while(1)
   {
-    HAL_UART_Transmit(&huart1, (uint8_t*) "Error\r\n", 8, 1000);
+    
   }
   /* USER CODE END Error_Handler_Debug */
 }

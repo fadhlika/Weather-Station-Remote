@@ -67,6 +67,7 @@
 #define ANEMOMETER_GPIO_Port GPIOB
 #define RAINGAUGE_Pin GPIO_PIN_5
 #define RAINGAUGE_GPIO_Port GPIOB
+#define RAINGAUGE_EXTI_IRQn EXTI4_15_IRQn
 
 /* ########################## Assert Selection ############################## */
 /**

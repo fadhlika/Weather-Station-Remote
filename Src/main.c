@@ -86,7 +86,6 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
     {
       captureValue1 = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_2);
       captureIndex = 1;
-      //HAL_UART_Transmit(&huart1, (uint8_t*) "Callback1\r\n", 11, 1000);
     } 
     else if(captureIndex == 1)
     {
@@ -98,7 +97,6 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
       {
         period = ((4999 - captureValue1) + captureValue2) + 1;
       }
-      //HAL_UART_Transmit(&huart1, (uint8_t*) "Callback2\r\n", 11, 1000);
       HAL_TIM_IC_Stop_IT(htim, TIM_CHANNEL_2);
       anemometer_done = 1;
     }
@@ -109,6 +107,10 @@ void HAL_TIM_PeriodElapsedCallback (TIM_HandleTypeDef * htim)
 {
   if(htim->Instance == TIM14)
   {
+    HAL_UART_Transmit(&huart1, (uint8_t*) "htim14\r\n", 8, 1000);
+    anemometer_timeout = 1;
+  } else if(htim->Instance == TIM2) {
+    HAL_UART_Transmit(&huart1, (uint8_t*) "htim2\r\n", 7, 1000);
     anemometer_timeout = 1;
   }
 }
@@ -180,51 +182,24 @@ int main(void)
     
     HAL_TIM_Base_Start_IT(&htim14);
     HAL_TIM_IC_Start_IT(&htim2, TIM_CHANNEL_2);
-  
-    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_2, GPIO_PIN_RESET);
-
-    uint16_t adc_raw[3];
-    HAL_ADCEx_Calibration_Start(&hadc);
-    HAL_ADC_Start(&hadc);
-    int i;
-    for(i=0; i<3; i++) {
-      if(HAL_ADC_PollForConversion(&hadc, 500) == HAL_OK) {
-        adc_raw[i] = HAL_ADC_GetValue(&hadc);
-      }
-    }
-    HAL_ADC_Stop(&hadc);
-
-    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_2, GPIO_PIN_SET);
-
-    uint16_t vdd = 3300 * (float)(*((uint16_t*) ((uint32_t) 0x1FFFF7BA)))/adc_raw[2];
-
-    while((anemometer_done != 1) && (anemometer_timeout != 1)) {
-      HAL_SuspendTick();
-      HAL_PWR_EnterSLEEPMode(PWR_MAINREGULATOR_ON, PWR_SLEEPENTRY_WFI);
-      HAL_ResumeTick();
-    }
-    
-    HAL_TIM_Base_Stop_IT(&htim14);
-    if(anemometer_timeout == 1) {
-      HAL_SuspendTick();
-      HAL_PWR_EnterSLEEPMode(PWR_MAINREGULATOR_ON, PWR_SLEEPENTRY_WFI);
-      HAL_ResumeTick();
-    }
-  
-    int len = sprintf(buffer, "%s;%u;%u;%u;%u;%u", timebuffer, vdd, tip, adc_raw[0], adc_raw[1], period);
-    
-    HAL_UART_Transmit(&huart1, &buffer, len, 1000);
+     
+    HAL_UART_Transmit(&huart1, &timebuffer, strlen(timebuffer), 1000);
     HAL_UART_Transmit(&huart1, (uint8_t*) "\r\n", 2, 1000);
     
-    LoRa_Init();
-    LoRa_Transmit(buffer, len);
-    LoRa_Sleep();
+    while(anemometer_timeout != 1 && anemometer_done != 1) {
+      HAL_SuspendTick();
+      HAL_PWR_EnterSLEEPMode(PWR_MAINREGULATOR_ON, PWR_SLEEPENTRY_WFI);
+      HAL_ResumeTick();
+    }
     
-    __HAL_GPIO_EXTI_CLEAR_FLAG(GPIO_PIN_5);
-    __HAL_RTC_ALARM_CLEAR_FLAG(&hrtc, RTC_FLAG_ALRAF);
+    if(anemometer_timeout == 1) HAL_TIM_IC_Stop_IT(&htim2, TIM_CHANNEL_2);
+    
+    HAL_TIM_Base_Stop_IT(&htim14);
+
     __HAL_RTC_ALARM_EXTI_CLEAR_FLAG();
     __HAL_PWR_CLEAR_FLAG(PWR_FLAG_WU);
-    HAL_PWR_EnterSTOPMode(PWR_LOWPOWERREGULATOR_ON, PWR_STOPENTRY_WFE);
+    __HAL_GPIO_EXTI_CLEAR_FLAG(GPIO_PIN_5);
+    HAL_PWR_EnterSTOPMode(PWR_LOWPOWERREGULATOR_ON, PWR_SLEEPENTRY_WFE);
     SystemClock_Config();
   }
   /* USER CODE END 3 */

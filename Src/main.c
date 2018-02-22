@@ -86,7 +86,6 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
     {
       captureValue1 = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_2);
       captureIndex = 1;
-      //HAL_UART_Transmit(&huart1, (uint8_t*) "Callback1\r\n", 11, 1000);
     } 
     else if(captureIndex == 1)
     {
@@ -98,7 +97,6 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
       {
         period = ((4999 - captureValue1) + captureValue2) + 1;
       }
-      //HAL_UART_Transmit(&huart1, (uint8_t*) "Callback2\r\n", 11, 1000);
       HAL_TIM_IC_Stop_IT(htim, TIM_CHANNEL_2);
       anemometer_done = 1;
     }
@@ -109,6 +107,10 @@ void HAL_TIM_PeriodElapsedCallback (TIM_HandleTypeDef * htim)
 {
   if(htim->Instance == TIM14)
   {
+    HAL_UART_Transmit(&huart1, (uint8_t*) "htim14\r\n", 8, 1000);
+    anemometer_timeout = 1;
+  } else if(htim->Instance == TIM2) {
+    HAL_UART_Transmit(&huart1, (uint8_t*) "htim2\r\n", 7, 1000);
     anemometer_timeout = 1;
   }
 }
@@ -198,18 +200,15 @@ int main(void)
 
     uint16_t vdd = 3300 * (float)(*((uint16_t*) ((uint32_t) 0x1FFFF7BA)))/adc_raw[2];
 
-    while((anemometer_done != 1) && (anemometer_timeout != 1)) {
+    while(anemometer_timeout != 1 && anemometer_done != 1) {
       HAL_SuspendTick();
       HAL_PWR_EnterSLEEPMode(PWR_MAINREGULATOR_ON, PWR_SLEEPENTRY_WFI);
       HAL_ResumeTick();
     }
     
+    if(anemometer_timeout == 1) HAL_TIM_IC_Stop_IT(&htim2, TIM_CHANNEL_2);
+    
     HAL_TIM_Base_Stop_IT(&htim14);
-    if(anemometer_timeout == 1) {
-      HAL_SuspendTick();
-      HAL_PWR_EnterSLEEPMode(PWR_MAINREGULATOR_ON, PWR_SLEEPENTRY_WFI);
-      HAL_ResumeTick();
-    }
   
     int len = sprintf(buffer, "%s;%u;%u;%u;%u;%u", timebuffer, vdd, tip, adc_raw[0], adc_raw[1], period);
     

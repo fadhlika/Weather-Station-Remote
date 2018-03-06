@@ -20,9 +20,9 @@ TARGET = Weather_Station_Remote
 # building variables
 ######################################
 # debug build?
-DEBUG = 1
+DEBUG = 0
 # optimization
-OPT = -Os
+OPT = -Os -s
 
 
 #######################################
@@ -115,7 +115,7 @@ CPU = -mcpu=cortex-m0
 # NONE for Cortex-M0/M0+/M3
 
 # float-abi
-
+FLOAT-ABI = -mfloat-abi=soft
 
 # mcu
 MCU = $(CPU) -mthumb $(FPU) $(FLOAT-ABI)

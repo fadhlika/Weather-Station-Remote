@@ -96,6 +96,7 @@ HAL_StatusTypeDef LoRa_Transmit(uint8_t * buffer, int length)
   beginPacket(0);
   write(buffer, length);
   endPacket();
+  HAL_UART_Transmit(&huart1, (uint8_t*) "done\r\n", 6, 1000);
 
   return HAL_OK;
 }
@@ -184,11 +185,9 @@ HAL_StatusTypeDef LoRa_DisableCrc()
   return HAL_OK;
 }
 
-HAL_StatusTypeDef LoRa_OnDioRise()
+void LoRa_OnDioRise()
 {
-  onDio0Rise();
-
-  return HAL_OK;
+  handleDio0Rise();
 }
 
 static void end()
@@ -221,7 +220,9 @@ static int endPacket()
   writeRegister(REG_OP_MODE, MODE_LONG_RANGE_MODE | MODE_TX);
 
   // wait for TX done
-  while((readRegister(REG_IRQ_FLAGS) & IRQ_TX_DONE_MASK) == 0);
+  while((readRegister(REG_IRQ_FLAGS) & IRQ_TX_DONE_MASK) == 0) {
+    HAL_UART_Transmit(&huart1, (uint8_t*) "check done\r\n", 12, 1000);
+  }
 
   // clear IRQ's
   writeRegister(REG_IRQ_FLAGS, IRQ_TX_DONE_MASK);
@@ -344,7 +345,7 @@ static void flush()
 {
 }
 
-static void onReceive(void(*callback)(int))
+void LoRa_onReceive(void(*callback)(int))
 {
   lora._onReceive = callback;
 
@@ -557,11 +558,11 @@ static uint8_t singleTransfer(uint8_t address, uint8_t value)
 
   HAL_GPIO_WritePin(lora.ss.Port, lora.ss.Pin, GPIO_PIN_RESET);
 
-  HAL_SPI_Transmit(lora.hspi, &address, 1, 1000);
-  HAL_SPI_TransmitReceive(lora.hspi, &value, &response, 1, 1000);
-  
-  HAL_GPIO_WritePin(lora.ss.Port, lora.ss.Pin, GPIO_PIN_SET);
+  HAL_SPI_Transmit(lora.hspi, &address, 1, 500);
+  HAL_SPI_TransmitReceive(lora.hspi, &value, &response, 1, 500);
 
+  HAL_GPIO_WritePin(lora.ss.Port, lora.ss.Pin, GPIO_PIN_SET);
+  
   return response;
 }
 

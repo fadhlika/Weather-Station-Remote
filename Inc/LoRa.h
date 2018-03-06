@@ -2,6 +2,7 @@
 #define LORA_H
 
 #include "spi.h"
+#include "usart.h"
 
 #define PA_OUTPUT_RFO_PIN      0
 #define PA_OUTPUT_PA_BOOST_PIN 1
@@ -42,7 +43,7 @@ HAL_StatusTypeDef LoRa_SetPreambleLength(long length);
 HAL_StatusTypeDef LoRa_SetSyncWord(int sw);
 HAL_StatusTypeDef LoRa_EnableCrc();
 HAL_StatusTypeDef LoRa_DisableCrc();
-HAL_StatusTypeDef LoRa_OnDioRise();
+void LoRa_OnDioRise();
 
 static void end();
 

@@ -56,7 +56,7 @@ void MX_RTC_Init(void)
     /**Initialize RTC Only 
     */
   hrtc.Instance = RTC;
-if(HAL_RTCEx_BKUPRead(&hrtc, RTC_BKP_DR0) != 0x32F2){
+if(HAL_RTCEx_BKUPRead(&hrtc, RTC_BKP_DR0) != 0x32F1){
   hrtc.Init.HourFormat = RTC_HOURFORMAT_24;
   hrtc.Init.AsynchPrediv = 1;
   hrtc.Init.SynchPrediv = 19550;
@@ -70,9 +70,9 @@ if(HAL_RTCEx_BKUPRead(&hrtc, RTC_BKP_DR0) != 0x32F2){
 
     /**Initialize RTC and set the Time and Date 
     */
-  sTime.Hours = 16;
-  sTime.Minutes = 24;
-  sTime.Seconds = 2;
+  sTime.Hours = 12;
+  sTime.Minutes = 1;
+  sTime.Seconds = 3;
   sTime.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
   sTime.StoreOperation = RTC_STOREOPERATION_RESET;
   if (HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BIN) != HAL_OK)
@@ -80,9 +80,9 @@ if(HAL_RTCEx_BKUPRead(&hrtc, RTC_BKP_DR0) != 0x32F2){
     _Error_Handler(__FILE__, __LINE__);
   }
 
-  sDate.WeekDay = RTC_WEEKDAY_MONDAY;
+  sDate.WeekDay = RTC_WEEKDAY_THURSDAY;
   sDate.Month = RTC_MONTH_MARCH;
-  sDate.Date = 5;
+  sDate.Date = 8;
   sDate.Year = 18;
 
   if (HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BIN) != HAL_OK)
@@ -92,9 +92,9 @@ if(HAL_RTCEx_BKUPRead(&hrtc, RTC_BKP_DR0) != 0x32F2){
 
     /**Enable the Alarm A 
     */
-  sAlarm.AlarmTime.Hours = 17;
-  sAlarm.AlarmTime.Minutes = 0;
-  sAlarm.AlarmTime.Seconds = 0;
+  sAlarm.AlarmTime.Hours = 9;
+  sAlarm.AlarmTime.Minutes = 7;
+  sAlarm.AlarmTime.Seconds = 3;
   sAlarm.AlarmTime.SubSeconds = 0;
   sAlarm.AlarmTime.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
   sAlarm.AlarmTime.StoreOperation = RTC_STOREOPERATION_RESET;
@@ -108,7 +108,7 @@ if(HAL_RTCEx_BKUPRead(&hrtc, RTC_BKP_DR0) != 0x32F2){
     _Error_Handler(__FILE__, __LINE__);
   }
 
-    HAL_RTCEx_BKUPWrite(&hrtc,RTC_BKP_DR0,0x32F2);
+    HAL_RTCEx_BKUPWrite(&hrtc,RTC_BKP_DR0,0x32F1);
   }
 
 }

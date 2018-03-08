@@ -59,11 +59,10 @@ uint32_t captureIndex = 0,
 captureValue1, 
 captureValue2, 
 period;
-uint8_t anemometer_done = 0,
-anemometer_timeout = 0;
-uint32_t tip= 0;
-uint8_t timebuffer[32], buffer[64];
-uint8_t rainfall = 0, stop_flag = 0;
+uint8_t timeout = 0;
+uint32_t tip = 0;
+uint8_t rainfall = 0;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -72,7 +71,7 @@ void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
 /* Private function prototypes -----------------------------------------------*/
 void HAL_RTC_AlarmAEventCallback(RTC_HandleTypeDef *hrtc);
-void RTC_DateTimeShow(uint8_t* showtime);
+void RTC_DateTimeShow(uint8_t* time);
 void LoRa_Init(void);
 void RTC_Init(void);
 /* USER CODE END PFP */
@@ -98,7 +97,6 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
         period = ((4999 - captureValue1) + captureValue2) + 1;
       }
       HAL_TIM_IC_Stop_IT(htim, TIM_CHANNEL_2);
-      anemometer_done = 1;
     }
   }
 }
@@ -107,21 +105,32 @@ void HAL_TIM_PeriodElapsedCallback (TIM_HandleTypeDef * htim)
 {
   if(htim->Instance == TIM14)
   {
-    HAL_UART_Transmit(&huart1, (uint8_t*) "htim14\r\n", 8, 1000);
-    anemometer_timeout = 1;
-  } else if(htim->Instance == TIM2) {
-    HAL_UART_Transmit(&huart1, (uint8_t*) "htim2\r\n", 7, 1000);
-    anemometer_timeout = 1;
+    timeout = 1;
   }
 }
 
-
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
-  if(GPIO_Pin == GPIO_PIN_5) {
-    tip++;
-    rainfall = 1;
+  switch(GPIO_Pin)
+  {
+    case RAINGAUGE_Pin:
+      tip++;
+      rainfall = 1;
+      break;
+    case DIO0_Pin:
+      LoRa_OnDioRise();
   }
+}
+
+void OnReceive(int packetsize) {
+  uint8_t buf[packetsize];
+
+  int i;
+  for(i=0; i<packetsize; i++) {
+    buf[i] = (char)LoRa_Read();
+  }
+  HAL_UART_Transmit(&huart1, &buf, packetsize, 1000);
+  HAL_UART_Transmit(&huart1, (uint8_t*) "\r\n", 2, 1000);
 }
 /* USER CODE END 0 */
 
@@ -162,7 +171,9 @@ int main(void)
   MX_TIM16_Init();
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
-  HAL_RTCEx_SetSmoothCalib(&hrtc, RTC_SMOOTHCALIB_PERIOD_8SEC, RTC_SMOOTHCALIB_PLUSPULSES_SET, 0x01F);
+  HAL_RTCEx_SetSmoothCalib(&hrtc, RTC_SMOOTHCALIB_PERIOD_8SEC, RTC_SMOOTHCALIB_PLUSPULSES_SET, 0x02);
+  LoRa_Init();
+  LoRa_onReceive(OnReceive);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -176,15 +187,16 @@ int main(void)
     #if DEBUG
     HAL_UART_Transmit(&huart1, (uint8_t*) "Setting Alarm\r\n", 15, 1000);
     #endif
-
+    
+    uint8_t timebuffer[6], buffer[64];
     RTC_DateTimeShow(&timebuffer);
     
-    anemometer_done = 0;
-    anemometer_timeout = 0;
+    timeout = 0;
     captureIndex = 0;
     period = 0;
     __HAL_TIM_SET_COUNTER(&htim14, 0);
     __HAL_TIM_SET_COUNTER(&htim2, 0);
+    LoRa_Receive();
     
     HAL_TIM_Base_Start_IT(&htim14);
     HAL_TIM_IC_Start_IT(&htim2, TIM_CHANNEL_2);
@@ -204,31 +216,30 @@ int main(void)
 
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_2, GPIO_PIN_SET);
 
-    uint8_t dir[2];
+    char dir;
     if(adc_raw[0] > adc_raw[1]) {
-      if(adc_raw[1] > 1388 && adc_raw[1] < 2068) {
-        sprintf(dir, "%s", "N");
-      } else if(adc_raw[1] > 2068 && adc_raw[1] < 2888) {
-        sprintf(dir, "%s", "E");
+      if(adc_raw[1] > 1800) {
+        dir = 'N';
+      } else if(adc_raw[1] <= 1800) {
+        dir = 'W';
       } 
     } else if(adc_raw[0] < adc_raw[1]) {
-      if(adc_raw[1] > 1388 && adc_raw[1] < 2068) {
-        sprintf(dir, "%s", "W");
-      } else if(adc_raw[1] > 2068 && adc_raw[1] < 2888) {
-        sprintf(dir, "%s", "S");
+      if(adc_raw[1] > 2800) {
+        dir = 'E';
+      } else if(adc_raw[1] <= 2800) {
+        dir = 'S';
       }
     }
 
     uint16_t vdd = 3300 * (float)(*((uint16_t*) ((uint32_t) 0x1FFFF7BA)))/adc_raw[2];
 
-    while(anemometer_timeout != 1 && anemometer_done != 1) {
+    while(timeout != 1) {
       HAL_SuspendTick();
       HAL_PWR_EnterSLEEPMode(PWR_MAINREGULATOR_ON, PWR_SLEEPENTRY_WFI);
       HAL_ResumeTick();
     }
     
-    if(anemometer_timeout == 1) HAL_TIM_IC_Stop_IT(&htim2, TIM_CHANNEL_2);
-    
+    HAL_TIM_IC_Stop_IT(&htim2, TIM_CHANNEL_2);    
     HAL_TIM_Base_Stop_IT(&htim14);
 
     #if DEBUG
@@ -237,18 +248,23 @@ int main(void)
     HAL_UART_Transmit(&huart1, &buffer, len_, 1000);
     #endif
 
-    uint32_t vel = 0;
-    if (period > 0) vel = 6142 * (10000/period) + 3098;
-    
-    int len = sprintf(buffer, "%s;%u;%u;%s;%u", timebuffer, vdd, tip, dir, vel);
+    double vel = 0;
+    if (period > 0) vel = 0.6142 * (1.0/((double)period/1000.0)) + 0.3098;
+    int vel_int = (int)(vel*1000);
+
     #if DEBUG
+    int len = sprintf(buffer, "1;20%.2u-%.2u-%.2uT%.2u:%.2u:%.2u;%c;%u;%d;%u", 
+                      timebuffer[0], timebuffer[1], timebuffer[2], 
+                      timebuffer[3], timebuffer[4], timebuffer[5],
+                      dir, vdd, vel_int, tip);
     HAL_UART_Transmit(&huart1, &buffer, len, 1000);
     HAL_UART_Transmit(&huart1, (uint8_t*) "\r\n", 2, 1000);
     #endif
-    LoRa_Init();
-    LoRa_Transmit(&buffer, len);
-    LoRa_Sleep();
     
+    LoRa_Transmit(buffer, len);
+    LoRa_Sleep();
+    tip = 0;
+
     stop:
     #if DEBUG
     HAL_UART_Transmit(&huart1, (uint8_t*) "Enter Stop\r\n", 12, 1000);
@@ -336,7 +352,7 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
-void RTC_DateTimeShow(uint8_t* showtime)
+void RTC_DateTimeShow(uint8_t* time)
 {
   RTC_DateTypeDef sdatestructureget;
   RTC_TimeTypeDef stimestructureget;
@@ -346,9 +362,12 @@ void RTC_DateTimeShow(uint8_t* showtime)
   /* Get the RTC current Date */
   HAL_RTC_GetDate(&hrtc, &sdatestructureget, RTC_FORMAT_BIN);
   /* Display time Format : hh:mm:ss */
-  sprintf((char*)showtime,"20%02d-%02d-%02dT%02d:%02d:%02d",
-  sdatestructureget.Year, sdatestructureget.Month, sdatestructureget.Date,
-  stimestructureget.Hours, stimestructureget.Minutes, stimestructureget.Seconds);
+  time[0] = sdatestructureget.Year;
+  time[1] = sdatestructureget.Month;
+  time[2] = sdatestructureget.Date;
+  time[3] = stimestructureget.Hours;
+  time[4] = stimestructureget.Minutes;
+  time[5] = stimestructureget.Seconds;
 
   RTC_AlarmTypeDef salarmstructureget;
  
@@ -363,11 +382,11 @@ void RTC_DateTimeShow(uint8_t* showtime)
 
   salarmstructureget.AlarmTime.Hours = stimestructureget.Hours;
   salarmstructureget.AlarmTime.Minutes = (stimestructureget.Minutes + 1) % 60;
-  salarmstructureget.AlarmTime.Seconds = stimestructureget.Seconds;
+  salarmstructureget.AlarmTime.Seconds = (stimestructureget.Seconds);
   salarmstructureget.AlarmTime.SubSeconds = stimestructureget.SubSeconds;
   salarmstructureget.AlarmTime.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
   salarmstructureget.AlarmTime.StoreOperation = RTC_STOREOPERATION_RESET;
-  salarmstructureget.AlarmMask = RTC_ALARMMASK_DATEWEEKDAY | RTC_ALARMMASK_HOURS | RTC_ALARMMASK_SECONDS;
+  salarmstructureget.AlarmMask = RTC_ALARMMASK_DATEWEEKDAY | RTC_ALARMMASK_HOURS;
   salarmstructureget.AlarmSubSecondMask = RTC_ALARMSUBSECONDMASK_ALL;
   salarmstructureget.AlarmDateWeekDaySel = RTC_ALARMDATEWEEKDAYSEL_DATE;
   salarmstructureget.AlarmDateWeekDay = sdatestructureget.Date;

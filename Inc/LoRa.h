@@ -31,9 +31,10 @@ extern LoRa_HandleTypeDef lora;
 
 HAL_StatusTypeDef LoRa_Begin(long frequency);
 HAL_StatusTypeDef LoRa_Transmit(uint8_t* buffer, int length);
-HAL_StatusTypeDef LoRa_Receive(uint8_t* buffer);
+HAL_StatusTypeDef LoRa_Receive();
 HAL_StatusTypeDef LoRa_Idle();
 HAL_StatusTypeDef LoRa_Sleep();
+
 HAL_StatusTypeDef LoRa_SetTxPower(int level, int outputPin);
 HAL_StatusTypeDef LoRa_SetFrequency(long frequency);
 HAL_StatusTypeDef LoRa_SetSpreadingFactore(int sf);
@@ -41,9 +42,13 @@ HAL_StatusTypeDef LoRa_SetSignalBandwidth(long sbw);
 HAL_StatusTypeDef LoRa_SetCodingRate4(int denominator);
 HAL_StatusTypeDef LoRa_SetPreambleLength(long length);
 HAL_StatusTypeDef LoRa_SetSyncWord(int sw);
+
 HAL_StatusTypeDef LoRa_EnableCrc();
 HAL_StatusTypeDef LoRa_DisableCrc();
-void LoRa_OnDioRise();
+
+HAL_StatusTypeDef LoRa_OnDioRise();
+
+uint8_t LoRa_Read();
 
 static void end();
 

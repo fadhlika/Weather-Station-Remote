@@ -101,19 +101,10 @@ HAL_StatusTypeDef LoRa_Transmit(uint8_t * buffer, int length)
   return HAL_OK;
 }
 
-HAL_StatusTypeDef LoRa_Receive(uint8_t* buffer) 
+HAL_StatusTypeDef LoRa_Receive() 
 {
-  int packetSize = parsePacket(0);
-  if (packetSize) {
-    // read packet
-    int i = 0;
-    while (available()) {
-      buffer[i] = (char)read();
-      i++;
-    }
-    return HAL_OK;
-  }
-  return HAL_ERROR;
+  receive(0);
+  return HAL_OK;
 }
 
 HAL_StatusTypeDef LoRa_Idle()
@@ -185,9 +176,15 @@ HAL_StatusTypeDef LoRa_DisableCrc()
   return HAL_OK;
 }
 
-void LoRa_OnDioRise()
+HAL_StatusTypeDef LoRa_OnDioRise()
 {
-  handleDio0Rise();
+  onDio0Rise();
+  return HAL_OK;
+}
+
+uint8_t LoRa_Read()
+{
+  return read();
 }
 
 static void end()
@@ -220,9 +217,7 @@ static int endPacket()
   writeRegister(REG_OP_MODE, MODE_LONG_RANGE_MODE | MODE_TX);
 
   // wait for TX done
-  while((readRegister(REG_IRQ_FLAGS) & IRQ_TX_DONE_MASK) == 0) {
-    HAL_UART_Transmit(&huart1, (uint8_t*) "check done\r\n", 12, 1000);
-  }
+  while((readRegister(REG_IRQ_FLAGS) & IRQ_TX_DONE_MASK) == 0);
 
   // clear IRQ's
   writeRegister(REG_IRQ_FLAGS, IRQ_TX_DONE_MASK);
@@ -348,7 +343,8 @@ static void flush()
 void LoRa_onReceive(void(*callback)(int))
 {
   lora._onReceive = callback;
-
+  
+  
   if (callback) {
     writeRegister(REG_DIO_MAPPING_1, 0x00);
 

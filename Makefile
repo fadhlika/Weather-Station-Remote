@@ -65,8 +65,6 @@ Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_i2c.c \
 Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_i2c_ex.c \
 Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_flash_ex.c \
 Src/LoRa.c \
-Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_rtc_ex.c \
-Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_rtc.c \
 Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_adc_ex.c \
 Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_adc.c \
 Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_uart.c \
@@ -79,7 +77,7 @@ Src/tim.c \
 Src/stm32f0xx_hal_msp.c \
 Src/adc.c \
 Src/usart.c \
-Src/rtc.c
+Src/dht22.c
 
 # ASM sources
 ASM_SOURCES =  \

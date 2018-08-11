@@ -96,7 +96,6 @@ HAL_StatusTypeDef LoRa_Transmit(uint8_t * buffer, int length)
   beginPacket(0);
   write(buffer, length);
   endPacket();
-  HAL_UART_Transmit(&huart1, (uint8_t*) "done\r\n", 6, 1000);
 
   return HAL_OK;
 }
